@@ -5,7 +5,7 @@ mod fetcher;
 mod api;
 mod storage;
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -22,13 +22,23 @@ async fn main() {
         .with_line_number(false)
         .init();
 
-    let config = Arc::new(config::Config::default());
-    let pool = Arc::new(pool::ProxyPool::new(config.clone()));
+    let config = Arc::new(RwLock::new(config::Config::default()));
 
-    info!("🚀 Proxy Pool starting on {}", config.listen_addr);
-    info!("   Max: {} | Check: {:?} | Fetch: {:?} | Cooldown: {:?} | Concurrency: {}",
-        config.max_pool_size, config.health_check_interval, config.fetch_interval,
-        config.cooldown_ttl, config.validation_concurrency);
+    {
+        let cfg = config.read().unwrap();
+        info!("🚀 Proxy Pool starting on {}", cfg.listen_addr);
+        info!("   Max: {} | Check: {:?} | Fetch: {:?} | Cooldown: {:?} | Concurrency: {}",
+            cfg.max_pool_size, cfg.health_check_interval, cfg.fetch_interval,
+            cfg.cooldown_ttl, cfg.validation_concurrency);
+        if cfg.fetch_upstream_proxy.is_empty() {
+            info!("   🌐 Fetch upstream: direct (no proxy)");
+        } else {
+            info!("   🔀 Fetch upstream: {}", cfg.fetch_upstream_proxy);
+        }
+    }
+
+    let init_cfg = config.read().unwrap().clone();
+    let pool = Arc::new(pool::ProxyPool::new(Arc::new(init_cfg)));
 
     // Restore from previous session
     let snapshot_path = std::env::temp_dir().join("proxy-pool-snapshot.json");
@@ -43,9 +53,10 @@ async fn main() {
     }
 
     // Start HTTP server FIRST
-    let router = api::build_router(pool.clone());
-    let listener = tokio::net::TcpListener::bind(&config.listen_addr).await.unwrap();
-    info!("🌐 API listening on http://{}", config.listen_addr);
+    let router = api::build_router(pool.clone(), config.clone());
+    let listen_addr = config.read().unwrap().listen_addr.clone();
+    let listener = tokio::net::TcpListener::bind(&listen_addr).await.unwrap();
+    info!("🌐 API listening on http://{}", listen_addr);
 
     let server_pool = pool.clone();
     tokio::spawn(async move {
@@ -61,8 +72,9 @@ async fn main() {
         info!("✅ Initial fetch: {n} new proxies");
 
         if fetch_pool.total_count() > 0 {
+            let cfg = fetch_config.read().unwrap().clone();
             info!("🩺 Initial health check...");
-            checker::run_health_check(fetch_pool.clone(), fetch_config.clone()).await;
+            checker::run_health_check(fetch_pool.clone(), cfg).await;
             info!("✅ Health check done. Active: {}", fetch_pool.active_count());
         }
     });
@@ -71,11 +83,13 @@ async fn main() {
     let hc_pool = pool.clone();
     let hc_config = config.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(hc_config.health_check_interval);
+        let hc_interval = hc_config.read().unwrap().health_check_interval;
+        let mut interval = tokio::time::interval(hc_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            checker::run_health_check(hc_pool.clone(), hc_config.clone()).await;
+            let cfg = hc_config.read().unwrap().clone();
+            checker::run_health_check(hc_pool.clone(), cfg).await;
             hc_pool.evict_low_quality();
             hc_pool.evict_expired_cooldowns();
             info!("📊 Pool: {}/{} active | {} cooling | {} total",
@@ -88,7 +102,8 @@ async fn main() {
     let fp = pool.clone();
     let fc = config.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(fc.fetch_interval);
+        let fetch_interval = fc.read().unwrap().fetch_interval;
+        let mut interval = tokio::time::interval(fetch_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;

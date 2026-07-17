@@ -7,7 +7,7 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use tracing::{debug, trace, warn};
 
-pub async fn run_health_check(pool: Arc<ProxyPool>, config: Arc<Config>) {
+pub async fn run_health_check(pool: Arc<ProxyPool>, config: Config) {
     let semaphore = Arc::new(Semaphore::new(config.validation_concurrency));
     let mut handles = Vec::new();
 
@@ -49,14 +49,13 @@ async fn validate_one(
     let client = match reqwest::Client::builder()
         .timeout(config.validation_timeout)
         .proxy(proxy_obj)
-        .no_proxy()  // 确保不走上游10808代理
+        .no_proxy()
         .build()
     {
         Ok(c) => c,
         Err(_) => { trace!("Client build fail: {addr}"); return; }
     };
 
-    // 依次尝试多个校验URL
     for test_url in &config.test_urls {
         let start = Instant::now();
         match client.get(test_url).send().await {
@@ -64,7 +63,7 @@ async fn validate_one(
                 let latency = start.elapsed().as_millis() as u64;
 
                 if resp.status().as_u16() != config.test_expected_status {
-                    continue; // 状态码不对，试下一个URL
+                    continue;
                 }
 
                 let body = match resp.text().await {
@@ -73,10 +72,9 @@ async fn validate_one(
                 };
 
                 if !config.test_expected_body.is_empty() && !body.contains(&config.test_expected_body) {
-                    continue; // 内容不对，试下一个URL
+                    continue;
                 }
 
-                // 通过！
                 proxy.record_success(latency);
                 recalculate_score(proxy);
                 pool.release_cooldown(&addr);
@@ -84,12 +82,11 @@ async fn validate_one(
             }
             Err(e) => {
                 trace!("{} via {}: {e}", addr, test_url);
-                continue; // 连接失败，试下一个URL
+                continue;
             }
         }
     }
 
-    // 所有URL都失败
     record_fail(pool, config, addr, proxy);
 }
 

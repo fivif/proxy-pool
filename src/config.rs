@@ -16,6 +16,7 @@ pub struct Config {
     pub test_expected_status: u16,
     /// 期望响应体中包含的关键字，空字符串则跳过内容校验
     pub test_expected_body: String,
+    /// 上游代理地址，留空则直连。格式: http://127.0.0.1:7890 或 socks5://127.0.0.1:1080
     pub fetch_upstream_proxy: String,
 }
 
@@ -31,14 +32,13 @@ impl Default for Config {
             max_pool_size: 5000,
             min_success_rate: 0.3,
             max_consecutive_failures: 3,
-            // HTTP 优先，大部分免费 HTTP 代理不支持 CONNECT；HTTPS 备用
             test_urls: vec![
                 "http://api.ipify.org/?format=json".into(),
                 "https://api.ipify.org/?format=json".into(),
             ],
             test_expected_status: 200,
             test_expected_body: "ip".into(),
-            fetch_upstream_proxy: "http://127.0.0.1:10808".into(),
+            fetch_upstream_proxy: "".into(),
         }
     }
 }

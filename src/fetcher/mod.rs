@@ -4,24 +4,28 @@ use crate::config::Config;
 use crate::pool::proxy::Protocol;
 use crate::pool::ProxyPool;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info};
 
-pub async fn fetch_all(pool: Arc<ProxyPool>, config: Arc<Config>) -> usize {
+pub async fn fetch_all(pool: Arc<ProxyPool>, config: Arc<RwLock<Config>>) -> usize {
     let sources = sources::default_sources();
+    let upstream = {
+        config.read().unwrap().fetch_upstream_proxy.clone()
+    };
 
     let mut client_builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30));
 
-    // 如果配置了上游代理，通过它访问 GitHub 等被墙的源
-    if !config.fetch_upstream_proxy.is_empty() {
-        if let Ok(proxy) = reqwest::Proxy::all(&config.fetch_upstream_proxy) {
+    if !upstream.is_empty() {
+        if let Ok(proxy) = reqwest::Proxy::all(&upstream) {
             client_builder = client_builder.proxy(proxy);
-            info!(target: "fetcher", "🔀 Fetch via upstream: {}", config.fetch_upstream_proxy);
+            info!(target: "fetcher", "🔀 Fetch via upstream: {}", upstream);
         } else {
-            error!(target: "fetcher", "Bad upstream proxy: {}", config.fetch_upstream_proxy);
+            error!(target: "fetcher", "Bad upstream proxy: {}", upstream);
         }
+    } else {
+        info!(target: "fetcher", "🌐 Fetch direct (no upstream)");
     }
 
     let client = client_builder.build().expect("Failed to build fetch client");
