@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxy Pool Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh}
+.header{background:#161b22;border-bottom:1px solid #30363d;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:20px;font-weight:600;color:#58a6ff;display:flex;align-items:center;gap:8px}
+.header h1 span{color:#8b949e;font-size:14px;font-weight:400}
+.header-right{display:flex;align-items:center;gap:12px}
+.refresh-btn{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s}
+.refresh-btn:hover{background:#30363d;border-color:#58a6ff}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:500}
+.badge.live{background:#033a16;color:#3fb950;border:1px solid #196c2e}
+.badge.live::before{content:'';width:7px;height:7px;border-radius:50%;background:#3fb950;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.container{padding:20px 24px;max-width:1400px;margin:0 auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;transition:all .2s}
+.card:hover{border-color:#58a6ff66}
+.card-label{font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.card-value{font-size:32px;font-weight:700;line-height:1}
+.card-value.green{color:#3fb950}
+.card-value.blue{color:#58a6ff}
+.card-value.yellow{color:#d2991d}
+.card-value.red{color:#f85149}
+.toolbar{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.search{background:#161b22;border:1px solid #30363d;color:#c9d1d9;padding:8px 14px;border-radius:6px;font-size:13px;width:260px;outline:none;transition:border-color .2s}
+.search:focus{border-color:#58a6ff}
+.filter-group{display:flex;gap:8px}
+.filter-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s}
+.filter-btn:hover{color:#c9d1d9;border-color:#58a6ff}
+.filter-btn.active{background:#1f2a3a;color:#58a6ff;border-color:#58a6ff}
+.table-wrap{background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{background:#1c2128;padding:10px 14px;text-align:left;font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;user-select:none;white-space:nowrap;border-bottom:1px solid #30363d}
+th:hover{color:#c9d1d9}
+th .sort-icon{margin-left:4px;font-size:10px}
+td{padding:8px 14px;font-size:13px;border-bottom:1px solid #21262d;white-space:nowrap}
+tr:hover td{background:#1c2128}
+.addr{font-family:'SF Mono',Monaco,'Cascadia Code',monospace;font-size:12px;color:#58a6ff;cursor:pointer;transition:color .15s}
+.addr:hover{color:#79c0ff;text-decoration:underline}
+.score-bar{display:inline-block;width:60px;height:6px;border-radius:3px;background:#21262d;vertical-align:middle;margin-right:8px;overflow:hidden}
+.score-fill{height:100%;border-radius:3px;transition:width .3s}
+.score-high{background:#3fb950}
+.score-mid{background:#d2991d}
+.score-low{background:#f85149}
+.protocol-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
+.tag-http{background:#1f2a3a;color:#58a6ff}
+.tag-https{background:#1a2332;color:#79c0ff}
+.tag-socks5{background:#2a1f3a;color:#bc8cff}
+.tag-socks4{background:#2a1a2a;color:#d2a8ff}
+.empty{text-align:center;padding:60px 20px;color:#8b949e}
+.empty p{font-size:14px;margin-top:8px}
+.copy-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;z-index:999;opacity:0;transition:opacity .2s;pointer-events:none}
+.copy-toast.show{opacity:1}
+.progress-indicator{display:flex;align-items:center;gap:8px;color:#8b949e;font-size:13px}
+.spinner{width:16px;height:16px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🦀 Proxy Pool <span>v0.1.0</span></h1>
+  <div class="header-right">
+    <span class="badge live" id="liveBadge">LIVE</span>
+    <button class="refresh-btn" onclick="refresh()">🔄 刷新</button>
+  </div>
+</div>
+<div class="container">
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">📦 总代理数</div>
+      <div class="card-value blue" id="statTotal">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">✅ 活跃代理</div>
+      <div class="card-value green" id="statActive">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">🧊 冷却中</div>
+      <div class="card-value yellow" id="statCooldown">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">📊 平均评分</div>
+      <div class="card-value" id="statScore" style="color:#bc8cff">—</div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <input class="search" placeholder="🔍 搜索 IP:Port..." id="searchInput" oninput="renderTable()">
+    <div class="filter-group">
+      <button class="filter-btn active" data-proto="all" onclick="setFilter('all',this)">全部</button>
+      <button class="filter-btn" data-proto="http" onclick="setFilter('http',this)">HTTP</button>
+      <button class="filter-btn" data-proto="https" onclick="setFilter('https',this)">HTTPS</button>
+      <button class="filter-btn" data-proto="socks5" onclick="setFilter('socks5',this)">SOCKS5</button>
+      <button class="filter-btn" data-proto="socks4" onclick="setFilter('socks4',this)">SOCKS4</button>
+    </div>
+    <div class="progress-indicator" id="loadingIndicator" style="display:none">
+      <div class="spinner"></div> 加载中...
+    </div>
+    <span style="color:#8b949e;font-size:12px;margin-left:auto" id="lastUpdate"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('addr')">地址 <span class="sort-icon" id="sort-addr"></span></th>
+          <th onclick="sortBy('protocol')">协议 <span class="sort-icon" id="sort-protocol"></span></th>
+          <th onclick="sortBy('success_rate')">成功率 <span class="sort-icon" id="sort-success_rate"></span></th>
+          <th onclick="sortBy('avg_latency_ms')">延迟 <span class="sort-icon" id="sort-avg_latency_ms"></span></th>
+          <th onclick="sortBy('score')">评分 <span class="sort-icon" id="sort-score">▼</span></th>
+          <th onclick="sortBy('total_checks')">检测次数 <span class="sort-icon" id="sort-total_checks"></span></th>
+        </tr>
+      </thead>
+      <tbody id="proxyTableBody">
+        <tr><td colspan="6" class="empty"><p>加载中...</p></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="copy-toast" id="toast"></div>
+
+<script>
+let proxies = [];
+let sortField = 'score';
+let sortReverse = true;
+let filterProto = 'all';
+let autoRefreshTimer;
+
+async function refresh(){
+  document.getElementById('loadingIndicator').style.display = 'flex';
+  try{
+    let [statsRes, proxyRes] = await Promise.all([
+      fetch('/api/stats'),
+      fetch('/api/proxies?limit=1000')
+    ]);
+    let stats = await statsRes.json();
+    proxies = await proxyRes.json();
+    updateStats(stats);
+    renderTable();
+    document.getElementById('lastUpdate').textContent = '最后更新: ' + new Date().toLocaleTimeString();
+    document.getElementById('liveBadge').style.display = 'inline-flex';
+    setTimeout(()=>document.getElementById('liveBadge').style.display = 'inline-flex',0);
+  }catch(e){
+    console.error(e);
+    document.getElementById('liveBadge').style.display = 'none';
+  }
+  document.getElementById('loadingIndicator').style.display = 'none';
+}
+
+function updateStats(s){
+  document.getElementById('statTotal').textContent = s.total.toLocaleString();
+  document.getElementById('statActive').textContent = s.active.toLocaleString();
+  document.getElementById('statCooldown').textContent = s.cooldown.toLocaleString();
+  document.getElementById('statScore').textContent = s.avg_score.toFixed(1);
+}
+
+function setFilter(proto, btn){
+  filterProto = proto;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function sortBy(field){
+  if(sortField === field){ sortReverse = !sortReverse; }
+  else { sortField = field; sortReverse = field === 'score' || field === 'success_rate'; }
+  document.querySelectorAll('.sort-icon').forEach(el=>el.textContent='');
+  let icon = document.getElementById('sort-'+field);
+  if(icon) icon.textContent = sortReverse ? '▼' : '▲';
+  renderTable();
+}
+
+function renderTable(){
+  let searchText = document.getElementById('searchInput').value.toLowerCase();
+  let filtered = proxies.filter(p=>{
+    if(filterProto !== 'all' && p.protocol !== filterProto) return false;
+    if(searchText && !p.addr.toLowerCase().includes(searchText)) return false;
+    return true;
+  });
+  filtered.sort((a,b)=>{
+    let va = a[sortField], vb = b[sortField];
+    if(typeof va === 'string') va = va.toLowerCase();
+    if(typeof vb === 'string') vb = vb.toLowerCase();
+    if(va < vb) return sortReverse ? 1 : -1;
+    if(va > vb) return sortReverse ? -1 : 1;
+    return 0;
+  });
+  let tbody = document.getElementById('proxyTableBody');
+  if(filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="6" class="empty"><p>😕 没有匹配的代理</p></td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(p=>{
+    let rate = (p.success_rate*100).toFixed(0);
+    let rateColor = p.success_rate>=0.7?'green':p.success_rate>=0.4?'yellow':'red';
+    let scoreColor = p.score>=70?'score-high':p.score>=40?'score-mid':'score-low';
+    let protoClass = 'tag-'+p.protocol;
+    let latency = p.avg_latency_ms > 0 ? (p.avg_latency_ms/1000).toFixed(1)+'s' : '—';
+    return `<tr>
+      <td><span class="addr" onclick="copyAddr('${p.addr}')" title="点击复制">${p.addr}</span></td>
+      <td><span class="protocol-tag ${protoClass}">${p.protocol.toUpperCase()}</span></td>
+      <td><span style="color:var(--color-${rateColor});font-weight:500">${rate}%</span></td>
+      <td style="color:#c9d1d9">${latency}</td>
+      <td>
+        <span class="score-bar"><span class="score-fill ${scoreColor}" style="width:${p.score}%"></span></span>
+        <span style="font-weight:600;color:${scoreColor==='score-high'?'#3fb950':scoreColor==='score-mid'?'#d2991d':'#f85149'}">${p.score.toFixed(0)}</span>
+      </td>
+      <td style="color:#8b949e">${p.total_checks}</td>
+    </tr>`;
+  }).join('');
+}
+
+function copyAddr(addr){
+  navigator.clipboard.writeText(addr).then(()=>{
+    let toast = document.getElementById('toast');
+    toast.textContent = '✅ 已复制: ' + addr;
+    toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'),1800);
+  });
+}
+
+// Init
+refresh();
+autoRefreshTimer = setInterval(refresh, 5000);
+</script>
+</body>
+</html>

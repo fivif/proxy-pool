@@ -1,0 +1,32 @@
+[package]
+name = "proxy-pool"
+version = "0.1.0"
+edition = "2024"
+description = "High-performance async proxy pool with health checking, cooldown, and intelligent scoring"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["macros"] }
+dashmap = "6"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "socks"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+parking_lot = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+url = "2"
+futures-util = "0.3"
+thiserror = "2"
+arc-swap = "1"
+backoff = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

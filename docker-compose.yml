@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  proxy-pool:
+    image: ghcr.io/fivif/proxy-pool:latest
+    container_name: proxy-pool
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=info
+      - PROXY_CHECK_INTERVAL=60
+      - PROXY_FETCH_INTERVAL=300
+      - PROXY_MAX_POOL=5000
+      - PROXY_VALIDATION_CONCURRENCY=256
+      - PROXY_VALIDATION_TIMEOUT=8
+      # 拉取代理源时使用上游代理（国内部署必备）
+      - PROXY_UPSTREAM_PROXY=
+    volumes:
+      - proxy-pool-data:/tmp
+
+volumes:
+  proxy-pool-data:
